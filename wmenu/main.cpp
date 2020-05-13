@@ -16,7 +16,7 @@
 
 #include <fstream>
 
-constexpr auto version = "0.1.0";
+constexpr auto version = "0.1.0 DEVELOP";
 
 int main(int argc, char* argv[]) {
 	cxxopts::Options options("wmenu", "wmenu is a generic menu for windows, inspired and (mostly) compatible with dmenu.");

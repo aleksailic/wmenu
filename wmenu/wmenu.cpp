@@ -88,41 +88,70 @@ void wmenu::print_selected() {
 	std::cout << str.c_str();
 }
 
+constexpr auto has_pattern = [](const sf::String& pattern) {
+	return [&pattern](const sf::String& item) { return item.find(pattern) != sf::String::InvalidPos; };
+};
+constexpr auto item_generator = [](sf::Font& font, size_t font_size) {
+	return [&font, font_size](const sf::String& item) {
+		return sf::Text(item, font, font_size);
+	};
+};
+
+template <class InputIt, class OutputIt, class Predicate>
+wmenu::range<InputIt> filter_n(const InputIt begin, const InputIt end, OutputIt result, Predicate pred, size_t limit) {
+	InputIt it, first_in_range = begin, last_in_range = end;
+	size_t count = 0;
+	for (it = begin; it != end && count < limit; ++it) {
+		if (pred(*it)) {
+			*result++ = *it;
+			if (count++ == 0) {
+				first_in_range = it;
+			}
+		}
+	}
+	last_in_range = it;
+	return std::make_pair(first_in_range, last_in_range);
+}
+
 // Takes a single event from the event queue in a blocking manner. Returns whether it was processed usefully 
 bool wmenu::process_event() {
 	auto shift_range_right = [this](size_t amount) {
-		std::vector<item_type> buffer;
+		std::vector<raw_item_type> buffer;
 		buffer.reserve(amount);
-		auto rpeek = filter(filtered_range.second, raw_items.cend(),
-			std::back_inserter(buffer), searchbar.getString(), amount).second;
+		auto rpeek = filter_n(filtered_range.second, raw_items.cend(), 
+							  std::back_inserter(buffer),
+							  has_pattern(searchbar.getString()),
+							  amount).second;
 		if (!buffer.empty()) {
-			std::move(buffer.begin(), buffer.end(), std::back_inserter(items));
+			std::transform(std::make_move_iterator(buffer.begin()), std::make_move_iterator(buffer.end()),
+				           std::back_inserter(items), item_generator(font, conf.font.size));
 			std::rotate(items.begin(), items.begin() + amount, items.end());
-			filtered_range.first = filter(filtered_range.first, raw_items.cend(),
-				buffer.begin(), searchbar.getString(), amount).second;
+			filtered_range.first = filter_n(filtered_range.first, raw_items.cend(),
+			                                buffer.begin(),
+			                                has_pattern(searchbar.getString()),
+				                            amount).second;
 			filtered_range.second = rpeek;
 			items.pop_back();
 			position_items();
 		}
 	};
 	auto shift_range_left = [this](size_t amount) {
-		std::vector<item_type> buffer;
+		std::vector<raw_item_type> buffer;
 		buffer.reserve(amount);
-		auto lpeek = filter(
-			std::make_reverse_iterator(filtered_range.first),
-			std::make_reverse_iterator(raw_items.cbegin()),
-			std::back_inserter(buffer),
-			searchbar.getString(),
-			amount).second.base();
+		auto lpeek = filter_n(std::make_reverse_iterator(filtered_range.first),
+		                      std::make_reverse_iterator(raw_items.cbegin()),
+		                      std::back_inserter(buffer),
+		                      has_pattern(searchbar.getString()),
+		                      amount).second.base();
 		if (!buffer.empty()) {
-			std::move(buffer.begin(), buffer.end(), std::front_inserter(items));
+			std::transform(std::make_move_iterator(buffer.begin()), std::make_move_iterator(buffer.end()),
+			               std::front_inserter(items), item_generator(font, conf.font.size));
 			filtered_range.first = lpeek;
-			filtered_range.second = filter(
-				std::make_reverse_iterator(filtered_range.second),
-				std::make_reverse_iterator(raw_items.cbegin()),
-				buffer.begin(),
-				searchbar.getString(),
-				amount).second.base();
+			filtered_range.second = filter_n(std::make_reverse_iterator(filtered_range.second),
+			                                 std::make_reverse_iterator(raw_items.cbegin()),
+			                                 buffer.begin(),
+			                                 has_pattern(searchbar.getString()),
+			                                 amount).second.base();
 			items.pop_back();
 			position_items();
 		}
@@ -132,7 +161,8 @@ bool wmenu::process_event() {
 	bool processed = false;
 	if (window.waitEvent(event)) {
 		processed = true;
-		if (event.type == sf::Event::Closed)
+		if (event.type == sf::Event::Closed || 
+			(event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Escape))
 			window.close();
 		else if (event.type == sf::Event::KeyPressed && items.size() > 0) {
 			if (event.key.code == sf::Keyboard::Right || event.key.code == sf::Keyboard::Down) {
@@ -143,8 +173,6 @@ bool wmenu::process_event() {
 				if (selected == 0) shift_range_left(1);
 				else selected--;
 			}
-			else if (event.key.code == sf::Keyboard::Escape)
-				window.close();
 			else if (event.key.code == sf::Keyboard::Enter) {
 				if (selected < items.size()) {
 					window.close();
@@ -171,31 +199,20 @@ bool wmenu::process_event() {
 	return processed;
 }
 
-template <class InputIt, class OutputIt, class OutputType>
-std::pair<InputIt, InputIt> wmenu::filter(
-	const InputIt begin, const InputIt end, OutputIt result, const sf::String& pattern, size_t limit)
-{
-	InputIt it = begin, first_in_range, last_in_range;
-	size_t count = 0;
-	for (; it != end && count < limit; ++it) {
-		if (it->find(pattern) != sf::String::InvalidPos) {
-			if constexpr (std::is_same_v<OutputType, item_type>) {
-				*result++ = std::move(item_type(*it, font, conf.font.size));
-			} else {
-				*result++ = std::move(*it);
-			}
-			if (count++ == 0) {
-				first_in_range = it;
-			}
-		}
-	}
-	last_in_range = it;
-	return std::make_pair(first_in_range, last_in_range);
-}
-
 void wmenu::filter_items(const sf::String& pattern) {
+	const auto item_found = has_pattern(pattern);
+
+	std::vector<sf::String> filtered_items;
+	filtered_range = filter_n(raw_items.cbegin(), raw_items.cend(), std::back_inserter(filtered_items), item_found, conf.limit);
+
 	items.clear();
-	filtered_range = filter(raw_items.cbegin(), raw_items.cend(), std::back_inserter(items), pattern, conf.limit);
+	std::transform(
+		std::make_move_iterator(filtered_items.begin()),
+		std::make_move_iterator(filtered_items.end()),
+		std::back_inserter(items),
+		item_generator(font, conf.font.size)
+	);
+
 	position_items();
 }
 

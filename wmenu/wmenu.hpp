@@ -34,11 +34,7 @@ private:
 	template <class InputIterator>
 	using range = std::pair<InputIterator, InputIterator>;
 	using item_type = sf::Text;
-
-	template <class InputIterator, class OutputIterator, class OutputType = item_type>
-	range<InputIterator> filter(
-		const InputIterator first, const InputIterator last, OutputIterator result, 
-		const sf::String& pattern, size_t limit);
+	using raw_item_type = sf::String;
 	
 	void filter_items(const sf::String& pattern);
 	void position_items();
