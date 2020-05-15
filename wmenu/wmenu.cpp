@@ -127,13 +127,12 @@ bool wmenu::process_event() {
         if (!buffer.empty()) {
             std::transform(std::make_move_iterator(buffer.begin()), std::make_move_iterator(buffer.end()),
                            std::back_inserter(items), item_generator(font, conf.font.size));
-            std::rotate(items.begin(), items.begin() + amount, items.end());
             filtered_range.first = filter_n(filtered_range.first, raw_items.cend(),
                                             buffer.begin(),
                                             has_pattern(searchbar.getString()),
                                             amount).second;
             filtered_range.second = rpeek;
-            items.pop_back();
+            while (amount--) items.pop_front();
             position_items();
         }
     };
@@ -154,7 +153,7 @@ bool wmenu::process_event() {
                                              buffer.begin(),
                                              has_pattern(searchbar.getString()),
                                              amount).second.base();
-            items.pop_back();
+            while (amount--) items.pop_back();
             position_items();
         }
     };
